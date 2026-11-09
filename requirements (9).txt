@@ -1,0 +1,8 @@
+pyTelegramBotAPI
+requests
+curl_cffi
+urllib3
+beautifulsoup4
+schedule
+gradio
+spaces
