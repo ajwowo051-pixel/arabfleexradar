@@ -14,7 +14,7 @@ import schedule
 from bs4 import BeautifulSoup
 
 # ============ الإعدادات ============
-BOT_TOKEN = "7808630939:AAFTprhWXJSaymQtOCq8tXKJKMWmMLgKaDc"
+BOT_TOKEN = "7808630939:AAERq61ZlSPqbLxY3H3GPwIN01NCcat0gqM"
 ADMIN_CHAT_ID = "1013251619"
 SECRET_KEY = "ArabFleex_2024_SecRet"
 
