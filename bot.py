@@ -14,7 +14,7 @@ import schedule
 from bs4 import BeautifulSoup
 
 # ============ الإعدادات ============
-BOT_TOKEN = "7808630939:AAERq61ZlSPqbLxY3H3GPwIN01NCcat0gqM"
+BOT_TOKEN = "7808630939:AAE-kiAUlzvcjYhiRVUpjE7DX6_iivvBIRE"
 ADMIN_CHAT_ID = "1013251619"
 SECRET_KEY = "ArabFleex_2024_SecRet"
 
@@ -513,13 +513,23 @@ def get_laroza_ep(current_url, target_ep, seen_fps):
     if not vid:
         return "WAITING"
 
-    target_soup = BeautifulSoup(target_html, 'html.parser')
-    watch_urls = [t.get('data-embed-url') for t in target_soup.select('[data-embed-url]') if t.get('data-embed-url')]
+    def _embeds(soup_obj):
+        return [t.get('data-embed-url') for t in soup_obj.select('[data-embed-url]') if t.get('data-embed-url')]
 
-    if not watch_urls:
+    target_soup = BeautifulSoup(target_html, 'html.parser')
+    watch_urls = _embeds(target_soup)
+
+    # لو الصفحة مفيهاش أي سيرفر موثوق، نجيب play.php ونضيف سيرفراته (مش بس لو القايمة فاضية)
+    if not any(is_trusted_server(u) for u in watch_urls):
         play_html = fetch_html(urljoin(target_url, f"/play.php?vid={vid}"))
-        play_soup = BeautifulSoup(play_html, 'html.parser')
-        watch_urls = [t.get('data-embed-url') for t in play_soup.select('[data-embed-url]') if t.get('data-embed-url')]
+        if play_html:
+            for u in _embeds(BeautifulSoup(play_html, 'html.parser')):
+                if u not in watch_urls:
+                    watch_urls.append(u)
+
+    # مفيش أي سيرفرات اتجابت خالص = مشكلة تحميل/حجب، مش حلقة وهمية
+    if not watch_urls:
+        return "NOSERVERS"
 
     dl_html = fetch_html(urljoin(target_url, f"/download.php?vid={vid}"))
     dl_soup = BeautifulSoup(dl_html, 'html.parser')
@@ -527,12 +537,16 @@ def get_laroza_ep(current_url, target_ep, seen_fps):
 
     trusted = [u for u in watch_urls if is_trusted_server(u)]
     if not trusted:
-        return "FAKE"
+        hosts = sorted({urlparse(u).netloc.lower() for u in watch_urls if u})
+        log(f"[FAKE] ح{target_ep}: مفيش سيرفر موثوق. السيرفرات الموجودة: {hosts}")
+        return "FAKE_NOTRUSTED:" + ", ".join(hosts[:4])
 
     for link in trusted:
         fp = extract_video_fingerprint(link)
-        if fp and fp in seen_fps:
-            return "FAKE"
+        # بصمة من غير مسار ولا ID (دومين بس) متنفعش للمقارنة
+        if fp and ('/' in fp or '?' in fp) and fp in seen_fps:
+            log(f"[FAKE] ح{target_ep}: نفس بصمة حلقة سابقة: {fp}")
+            return "FAKE_DUP:" + fp
 
     valid_watches = [u for u in watch_urls if is_real_server(u)]
     return {"url": target_url, "watch_urls": valid_watches,
@@ -575,8 +589,15 @@ def scan_item(slug, info):
     if res == "WAITING":
         info["status_text"] = f"بانتظار ح{target_ep}"
         return False
-    if res == "FAKE":
-        info["status_text"] = f"ح{target_ep} وهمية — بانتظار السيرفر الحقيقي"
+    if res == "NOSERVERS":
+        info["status_text"] = f"ح{target_ep} موجودة بس تعذر تحميل السيرفرات (حجب/مهلة) — هعيد المحاولة"
+        return False
+    if isinstance(res, str) and res.startswith("FAKE"):
+        reason = res.split(":", 1)[1] if ":" in res else ""
+        if res.startswith("FAKE_NOTRUSTED"):
+            info["status_text"] = f"ح{target_ep} مفيهاش سيرفر موثوق (الموجود: {reason})"
+        else:
+            info["status_text"] = f"ح{target_ep} نفس فيديو حلقة سابقة ({reason}) — بانتظار السيرفر الحقيقي"
         return False
 
     if isinstance(res, dict):
