@@ -14,7 +14,7 @@ import schedule
 from bs4 import BeautifulSoup
 
 # ============ الإعدادات ============
-BOT_TOKEN = "7808630939:AAE-kiAUlzvcjYhiRVUpjE7DX6_iivvBIRE"
+BOT_TOKEN = "7808630939:AAERq61ZlSPqbLxY3H3GPwIN01NCcat0gqM"
 ADMIN_CHAT_ID = "1013251619"
 SECRET_KEY = "ArabFleex_2024_SecRet"
 
@@ -707,7 +707,7 @@ def get_text(message):
 @bot.message_handler(commands=["start", "help"])
 def welcome(message):
     if not is_admin(message): return
-    bot.reply_to(message, "🤖 <b>نظام المراقبة الذكي V2 (لاروزا)</b>\n\n🔹 <code>/add</code> — إضافة مسلسل\n🔹 <code>/del</code> — حذف مسلسل\n🔹 <code>/setep</code> — تعديل رقم آخر حلقة\n🔹 <code>/status</code> — تقرير الحالة الشامل\n🔹 <code>/testfb</code> — 🧪 فحص الاتصال بـ Firebase فوراً\n🔹 <code>/setdomain</code> — تحديد دومين لاروزا يدوي 🔒\n🔹 <code>/cleardomain</code> — إلغاء الدومين اليدوي 🔓\n🔹 <code>/checkdomain</code> — فحص الدومين الآن\n🔹 <code>/backup</code> — نسخة احتياطية\n🔹 <code>/restore</code> — استعادة البيانات", parse_mode="HTML")
+    bot.reply_to(message, "🤖 <b>نظام المراقبة الذكي V2 (لاروزا)</b>\n\n🔹 <code>/add</code> — إضافة مسلسل\n🔹 <code>/del</code> — حذف مسلسل\n🔹 <code>/setep</code> — تعديل رقم آخر حلقة\n🔹 <code>/refresh</code> — 🔄 تحديث مسلسل (حل مشكلة الحلقة الوهمية)\n🔹 <code>/status</code> — تقرير الحالة الشامل\n🔹 <code>/testfb</code> — 🧪 فحص الاتصال بـ Firebase فوراً\n🔹 <code>/setdomain</code> — تحديد دومين لاروزا يدوي 🔒\n🔹 <code>/cleardomain</code> — إلغاء الدومين اليدوي 🔓\n🔹 <code>/checkdomain</code> — فحص الدومين الآن\n🔹 <code>/backup</code> — نسخة احتياطية\n🔹 <code>/restore</code> — استعادة البيانات", parse_mode="HTML")
 
 
 @bot.message_handler(commands=["testfb"])
@@ -974,6 +974,51 @@ def process_delete_callback(call):
             bot.answer_callback_query(call.id, "❌ غير موجود.")
 
 
+def refresh_series(slug):
+    """نفس أثر (حذف + إضافة من جديد): يعيد بناء بصمات الحلقات من آخر حلقة مسجلة ويصفّر الحالة."""
+    dom = get_working_laroza_domain(force=True)
+    with data_lock:
+        data = load_series_data()
+        if slug not in data:
+            return False
+        info = data[slug]
+        url = info.get("laroza_url", "")
+        if url and dom:
+            url = replace_domain(url, dom)
+        info["laroza_seen_fps"] = collect_fingerprints(url)
+        info["status_text"] = "تم التحديث، جاري الفحص..."
+        save_series_data(data)
+    return True
+
+
+@bot.message_handler(commands=["refresh"])
+def refresh_start(message):
+    if not is_admin(message): return
+    data = load_series_data()
+    if not data: return bot.reply_to(message, "📭 القائمة فارغة.")
+    markup = InlineKeyboardMarkup(row_width=1)
+    markup.add(InlineKeyboardButton(text="🔄 تحديث الكل", callback_data="refresh_all"))
+    for slug, info in data.items():
+        markup.add(InlineKeyboardButton(text=f"🔄 {info.get('title', slug)}", callback_data=f"refresh_{slug}"))
+    bot.reply_to(message, "🔄 اختر المسلسل لتحديثه (لو بيقول حلقة وهمية وهي موجودة):", reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('refresh_'))
+def process_refresh_callback(call):
+    if str(call.message.chat.id) != str(ADMIN_CHAT_ID):
+        return bot.answer_callback_query(call.id)
+    key = call.data.split('refresh_', 1)[1]
+    bot.answer_callback_query(call.id, "⏳ جاري التحديث...")
+    slugs = list(load_series_data().keys()) if key == "all" else [key]
+    done = [s for s in slugs if refresh_series(s)]
+    try:
+        bot.edit_message_text(f"✅ تم تحديث {len(done)} مسلسل، وبدأ الفحص فوراً.",
+                              call.message.chat.id, call.message.message_id)
+    except Exception:
+        pass
+    threading.Thread(target=scan_all_series_once, daemon=True).start()
+
+
 @bot.message_handler(commands=["backup"])
 def backup_data(message):
     if not is_admin(message): return
@@ -1031,6 +1076,7 @@ def setup_commands_menu():
         BotCommand("add", "➕ إضافة مسلسل"),
         BotCommand("del", "🗑 حذف مسلسل"),
         BotCommand("setep", "✏️ تعديل رقم آخر حلقة"),
+        BotCommand("refresh", "🔄 تحديث مسلسل"),
         BotCommand("status", "📊 تقرير الحالة الشامل"),
         BotCommand("testfb", "🧪 فحص اتصال Firebase"),
         BotCommand("setdomain", "🔒 تحديد دومين لاروزا يدوي"),
