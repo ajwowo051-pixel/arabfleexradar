@@ -546,7 +546,7 @@ def get_laroza_ep(current_url, target_ep, seen_fps):
         # بصمة من غير مسار ولا ID (دومين بس) متنفعش للمقارنة
         if fp and ('/' in fp or '?' in fp) and fp in seen_fps:
             log(f"[FAKE] ح{target_ep}: نفس بصمة حلقة سابقة: {fp}")
-            return "FAKE_DUP:" + fp
+            return f"FAKE_DUP:{fp} | vid={vid} | محفوظ={len(seen_fps)}"
 
     valid_watches = [u for u in watch_urls if is_real_server(u)]
     return {"url": target_url, "watch_urls": valid_watches,
@@ -634,11 +634,13 @@ def scan_item(slug, info):
         info["laroza_url"] = res["url"]
         info["status_text"] = f"✅ تم اصطياد ح{target_ep}"
 
+        # نحتفظ ببصمة آخر حلقة بس (زي ما بيحصل عند حذف المسلسل وإضافته من جديد)
+        new_fps = []
         for u in res["trusted_urls"]:
             fp = extract_video_fingerprint(u)
-            if fp and fp not in info["laroza_seen_fps"]:
-                info["laroza_seen_fps"].append(fp)
-        info["laroza_seen_fps"] = info["laroza_seen_fps"][-50:]
+            if fp and fp not in new_fps:
+                new_fps.append(fp)
+        info["laroza_seen_fps"] = new_fps
 
         msg = f"🎬 <b>تم اصطياد وتحديث الحلقة {target_ep}</b>\n"
         msg += f"📺 <b>المسلسل:</b> {info['title']}\n"
